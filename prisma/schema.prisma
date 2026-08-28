@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  folders Folder[]
+  files   File[]
+  sharesGiven    Share[] @relation("SharedByUser")
+  sharesReceived Share[] @relation("SharedWithUser")
+
+}
+
+model Folder {
+  id        String   @id @default(uuid())
+  name      String
+  ownerId   String
+  parentId  String?
+  starred   Boolean  @default(false)
+  trashed   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  owner    User     @relation(fields: [ownerId], references: [id])
+  parent   Folder?  @relation("FolderToFolder", fields: [parentId], references: [id])
+  children Folder[] @relation("FolderToFolder")
+  files    File[]
+}
+
+model File {
+  id         String   @id @default(uuid())
+  name       String
+  mimeType   String
+  sizeBytes  Int
+  storageKey String
+  ownerId    String
+  folderId   String?
+  starred    Boolean  @default(false)
+  trashed    Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  owner  User    @relation(fields: [ownerId], references: [id])
+  folder Folder? @relation(fields: [folderId], references: [id])
+}
+model Share {
+  id           String   @id @default(uuid())
+  resourceType String   // "FILE" or "FOLDER"
+  resourceId   String
+  sharedById   String
+  sharedWithId String
+  role         String   // "VIEWER" or "EDITOR"
+  createdAt    DateTime @default(now())
+
+  sharedBy   User @relation("SharedByUser", fields: [sharedById], references: [id])
+  sharedWith User @relation("SharedWithUser", fields: [sharedWithId], references: [id])
+}
