@@ -105,7 +105,8 @@
   },
   "scripts": {
     "dev": "nodemon src/index.js",
-    "postinstall": "prisma skills sync || exit 0"
+    "start": "node src/index.js",
+    "postinstall": "prisma generate"
   },
   "keywords": [],
   "author": "",
