@@ -299,7 +299,15 @@ app.get('/api/shares/with-me', requireAuth, async (req, res) => {
     where: { sharedWithId: req.userId },
     include: { sharedBy: { select: { email: true } } },
   });
-  res.json(shares);
+
+  const enriched = await Promise.all(shares.map(async (s) => {
+    const resource = s.resourceType === 'FILE'
+      ? await prisma.file.findUnique({ where: { id: s.resourceId } })
+      : await prisma.folder.findUnique({ where: { id: s.resourceId } });
+    return { ...s, resource };
+  }));
+
+  res.json(enriched.filter((s) => s.resource));
 });
 
 app.delete('/api/shares/:id', requireAuth, async (req, res) => {
