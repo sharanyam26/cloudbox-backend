@@ -310,5 +310,21 @@ app.delete('/api/shares/:id', requireAuth, async (req, res) => {
   res.status(204).send();
 });
 
+// ---------- SEARCH ----------
+app.get('/api/search', requireAuth, async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json({ folders: [], files: [] });
+
+  const [folders, files] = await Promise.all([
+    prisma.folder.findMany({
+      where: { ownerId: req.userId, trashed: false, name: { contains: q, mode: 'insensitive' } },
+    }),
+    prisma.file.findMany({
+      where: { ownerId: req.userId, trashed: false, name: { contains: q, mode: 'insensitive' } },
+    }),
+  ]);
+
+  res.json({ folders, files });
+});
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
