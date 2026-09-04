@@ -206,7 +206,13 @@ app.get('/api/files/trash', requireAuth, async (req, res) => {
 
 app.get('/api/files/:id/download', requireAuth, async (req, res) => {
   const file = await prisma.file.findUnique({ where: { id: req.params.id } });
-  if (!file || file.ownerId !== req.userId) return res.status(404).json({ message: 'File not found' });
+  if (!file) return res.status(404).json({ message: 'File not found' });
+
+  const isOwner = file.ownerId === req.userId;
+  const share = isOwner ? null : await prisma.share.findFirst({
+    where: { resourceType: 'FILE', resourceId: file.id, sharedWithId: req.userId },
+  });
+  if (!isOwner && !share) return res.status(404).json({ message: 'File not found' });
 
   const { data, error } = await supabase.storage
     .from(process.env.SUPABASE_BUCKET)
@@ -263,6 +269,7 @@ app.delete('/api/files/:id', requireAuth, async (req, res) => {
   await prisma.file.delete({ where: { id: req.params.id } });
   res.status(204).send();
 });
+
 // ---------- SHARING ----------
 app.post('/api/shares', requireAuth, async (req, res) => {
   try {
@@ -334,5 +341,6 @@ app.get('/api/search', requireAuth, async (req, res) => {
 
   res.json({ folders, files });
 });
+
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
