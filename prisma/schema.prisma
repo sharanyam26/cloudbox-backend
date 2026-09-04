@@ -63,3 +63,14 @@ model Share {
   sharedBy   User @relation("SharedByUser", fields: [sharedById], references: [id])
   sharedWith User @relation("SharedWithUser", fields: [sharedWithId], references: [id])
 }
+model LinkShare {
+  id          String    @id @default(uuid())
+  token       String    @unique
+  resourceType String
+  resourceId  String
+  role        String
+  password    String?
+  expiresAt   DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+}

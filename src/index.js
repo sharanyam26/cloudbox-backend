@@ -7,10 +7,12 @@ const prisma = require('./prismaClient');
 const requireAuth = require('./middleware/auth');
 const multer = require('multer');
 const supabase = require('./supabaseClient');
-
+const crypto = require('crypto');
 const upload = multer({ storage: multer.memoryStorage() });
 const { OAuth2Client } = require('google-auth-library');
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const crypto = require('crypto');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -349,7 +351,77 @@ app.delete('/api/shares/:id', requireAuth, async (req, res) => {
   await prisma.share.delete({ where: { id: req.params.id } });
   res.status(204).send();
 });
+// ---------- PUBLIC LINK SHARES ----------
+app.post('/api/link-shares', requireAuth, async (req, res) => {
+  try {
+    const { resourceType, resourceId, role, password, expiresInHours } = req.body;
 
+    const resource = resourceType === 'FILE'
+      ? await prisma.file.findUnique({ where: { id: resourceId } })
+      : await prisma.folder.findUnique({ where: { id: resourceId } });
+    if (!resource || resource.ownerId !== req.userId) {
+      return res.status(404).json({ message: 'Resource not found' });
+    }
+
+    const token = crypto.randomBytes(16).toString('hex');
+    const linkShare = await prisma.linkShare.create({
+      data: {
+        token,
+        resourceType,
+        resourceId,
+        role: role || 'VIEWER',
+        password: password || null,
+        expiresAt: expiresInHours ? new Date(Date.now() + expiresInHours * 3600000) : null,
+        createdById: req.userId,
+      },
+    });
+
+    res.json({ token: linkShare.token });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Something went wrong' });
+  }
+});
+
+app.get('/api/public/:token', async (req, res) => {
+  const linkShare = await prisma.linkShare.findUnique({ where: { token: req.params.token } });
+  if (!linkShare) return res.status(404).json({ message: 'Link not found' });
+  if (linkShare.expiresAt && linkShare.expiresAt < new Date()) {
+    return res.status(410).json({ message: 'This link has expired' });
+  }
+  if (linkShare.password && linkShare.password !== req.query.password) {
+    return res.status(401).json({ message: 'Password required', needsPassword: true });
+  }
+
+  const resource = linkShare.resourceType === 'FILE'
+    ? await prisma.file.findUnique({ where: { id: linkShare.resourceId } })
+    : await prisma.folder.findUnique({ where: { id: linkShare.resourceId } });
+  if (!resource) return res.status(404).json({ message: 'Resource not found' });
+
+  res.json({ resourceType: linkShare.resourceType, resource });
+});
+
+app.get('/api/public/:token/download', async (req, res) => {
+  const linkShare = await prisma.linkShare.findUnique({ where: { token: req.params.token } });
+  if (!linkShare || linkShare.resourceType !== 'FILE') return res.status(404).json({ message: 'Not found' });
+  if (linkShare.expiresAt && linkShare.expiresAt < new Date()) {
+    return res.status(410).json({ message: 'This link has expired' });
+  }
+  if (linkShare.password && linkShare.password !== req.query.password) {
+    return res.status(401).json({ message: 'Password required' });
+  }
+
+  const file = await prisma.file.findUnique({ where: { id: linkShare.resourceId } });
+  if (!file) return res.status(404).json({ message: 'File not found' });
+
+  const { data, error } = await supabase.storage.from(process.env.SUPABASE_BUCKET).download(file.storageKey);
+  if (error) return res.status(500).json({ message: 'Download failed' });
+
+  const buffer = Buffer.from(await data.arrayBuffer());
+  res.setHeader('Content-Type', file.mimeType);
+  res.setHeader('Content-Disposition', `attachment; filename="${file.name}"`);
+  res.send(buffer);
+});
 // ---------- SEARCH ----------
 app.get('/api/search', requireAuth, async (req, res) => {
   const q = (req.query.q || '').trim();
